@@ -1,0 +1,17 @@
+{
+  "name": "codecraft-wa-bot",
+  "version": "1.0.0",
+  "description": "WhatsApp Bot for CodeCraft Systems",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "whatsapp-web.js": "^1.23.0",
+    "qrcode-terminal": "^0.12.0",
+    "openai": "^4.0.0",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.0.0"
+  }
+}
