@@ -1,580 +1,256 @@
 /**
- * ╔══════════════════════════════════════════════════════════╗
- * ║        CodeCraft Systems — WhatsApp AI Assistant         ║
- * ║     Powered by whatsapp-web.js + OpenAI GPT-4o-mini      ║
- * ╚══════════════════════════════════════════════════════════╝
+ * ⚡ CodeCraft Systems - Advanced Enterprise WhatsApp Bot
+ * 👨‍💻 Created by: DARI (Made by Dari)
+ * 🛡️ Platform: Optimized for Render.com
+ * 💠 Version: 4.0.0 (The Ultimate Edition)
  */
 
-require("dotenv").config();
-const { Client, LocalAuth } = require("whatsapp-web.js");
-const qrcode = require("qrcode-terminal");
-const OpenAI = require("openai");
-const axios = require("axios");
-const cheerio = require("cheerio");
-const http = require("http");
-const QRCode = require("qrcode");
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
+const { OpenAI } = require('openai');
+const axios = require('axios');
+const cheerio = require('cheerio');
+const http = require('http');
+require('dotenv').config();
 
-// ─── QR State ────────────────────────────────────────────────────────────────
-let currentQR = null;       // نص الـ QR الخام
-let currentQRImage = null;  // صورة QR بصيغة base64
-let botStatus = "starting"; // starting | awaiting_qr | ready | disconnected
+// ==========================================
+// 1. التكوين الأساسي وهوية المتجر 💠
+// ==========================================
+const STORE_INFO = {
+    NAME: "CodeCraft Systems 💠",
+    OWNER: "DARI",
+    URL: "https://smart19.zid.store",
+    EMAIL: "support@codecraft.com",
+    THEME_PURPLE: "💜",
+    THEME_BOLT: "⚡",
+    THEME_ROCKET: "🚀",
+    THEME_BASKET: "🛒",
+    CURRENCY: "ر.س"
+};
 
-// ─── OpenAI Client ───────────────────────────────────────────────────────────
+// ==========================================
+// 2. قاعدة بيانات السياسات والردود الثابتة
+// ==========================================
+const STORE_POLICIES = {
+    SHIPPING: `📦 *سياسة الشحن والتوصيل:*
+نشحن لجميع مدن المملكة العربية السعودية 🇸🇦.
+- مدة التوصيل: من 2 إلى 5 أيام عمل.
+- التكلفة: تظهر آلياً عند إتمام الطلب حسب مدينتك.
+فالك التوفيق! 🚚⚡`,
+
+    WARRANTY: `🛡️ *الضمان والجودة:*
+جميع منتجاتنا في ${STORE_INFO.NAME} تخضع لضمان لمدة سنتين ضد العيوب المصنعية.
+نضمن لك جودة عالية وخدمة ما بعد البيع تليق بك 💜.`,
+
+    PAYMENT: `💳 *خيارات الدفع المتاحة:*
+نوفر لك أسهل وأسرع طرق الدفع:
+✅ مدى (Mada)
+✅ أبل باي (Apple Pay)
+✅ فيزا / ماستركارد
+✅ تابي وتمارا (قريباً)
+الدفع آمن ومشفر بالكامل عبر المتجر 💠.`,
+
+    HOW_TO_ORDER: `🛒 *خطوات الطلب البسيطة:*
+1️⃣ ادخل على الرابط: ${STORE_INFO.URL}
+2️⃣ تصفح المنتجات واختر ما يناسبك.
+3️⃣ أضف المنتج للسلة واضغط على "إتمام الطلب".
+4️⃣ سجل جوالك وأدخل عنوانك.. ومبروك! 🎉🚀`
+};
+
+// ==========================================
+// 3. كلمات التحويل والتحكم (Keywords)
+// ==========================================
+const TRIGGERS = {
+    START: ['بوت', 'مساعده', 'ابدأ', 'start', 'ستارت', 'يا طويل', 'شغال'],
+    HELLO: ['هلا', 'مرحبا', 'السلام', 'سلام', 'يا هلا', 'صباح', 'مساء'],
+    HUMAN: ['موظف', 'انسان', 'بشر', 'بشري', 'تحدث مع', 'اتصل', 'مشرف', 'إنسان', 'عملاء', 'خدمة العملاء', 'ابي شخص'],
+    STORE: ['متجر', 'رابط', 'موقع', 'وينكم', 'كيف اطلب', 'رابط المتجر'],
+    PRICING: ['سعر', 'بكم', 'عندكم', 'بكم هذا', 'قيمة', 'تكلفة']
+};
+
+// ==========================================
+// 4. نظام أوقات العمل الدقيق (KSA Time)
+// ==========================================
+function getWorkStatus() {
+    const now = new Date();
+    // تحويل الوقت لتوقيت السعودية (GMT+3)
+    const saudiTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+    const day = saudiTime.getDay(); // 0=الأحد, 5=الجمعة
+    const hour = saudiTime.getHours();
+
+    let isAvailable = false;
+    let message = "";
+
+    if (day === 5) { // يوم الجمعة
+        if (hour >= 14 && hour < 22) {
+            isAvailable = true;
+        } else {
+            message = "الجمعة (من 2:00 مساءً إلى 10:00 مساءً)";
+        }
+    } else { // من السبت إلى الخميس
+        if (hour >= 9 && hour < 22) {
+            isAvailable = true;
+        } else {
+            message = "السبت إلى الخميس (من 9:00 صباحاً إلى 10:00 مساءً)";
+        }
+    }
+    return { isAvailable, message };
+}
+
+// ==========================================
+// 5. محرك البحث الذكي (Zid Store Scraper)
+// ==========================================
+async function searchProducts(query) {
+    try {
+        const { data } = await axios.get(`${STORE_INFO.URL}/products?search=${encodeURIComponent(query)}`);
+        const $ = cheerio.load(data);
+        let results = [];
+
+        $('.product-item').each((i, el) => {
+            if (i < 3) {
+                results.push({
+                    name: $(el).find('.product-title').text().trim(),
+                    price: $(el).find('.product-price').text().trim(),
+                    link: $(el).find('a').attr('href').startsWith('http') ? 
+                          $(el).find('a').attr('href') : STORE_INFO.URL + $(el).find('a').attr('href')
+                });
+            }
+        });
+        return results;
+    } catch (e) {
+        return [];
+    }
+}
+
+// ==========================================
+// 6. تهيئة الذكاء الاصطناعي (OpenAI)
+// ==========================================
 const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
 
-// ─── Store Config ────────────────────────────────────────────────────────────
-const STORE_URL = "https://smart19.zid.store";
-const STORE_NAME = "CodeCraft Systems";
-const SUPPORT_NUMBER = process.env.SUPPORT_NUMBER || "966500000000"; // غيّره لرقم الدعم الحقيقي
-
-// ─── In-Memory Conversation History (per user) ───────────────────────────────
-const conversations = new Map(); // userId → [{ role, content }]
-const MAX_HISTORY = 10; // آخر 10 رسائل للحفاظ على السياق
-
-// ─── Human Handoff Tracking ──────────────────────────────────────────────────
-const humanHandoff = new Set(); // مجموعة المستخدمين الذين طلبوا التحويل للبشر
-
-// ─── WhatsApp Client Setup ───────────────────────────────────────────────────
+// ==========================================
+// 7. تهيئة عميل الواتساب (إعدادات Render)
+// ==========================================
 const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: "./.wwebjs_auth" }),
-  puppeteer: {
-    headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args: [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-accelerated-2d-canvas",
-      "--no-first-run",
-      "--no-zygote",
-      "--single-process",
-      "--disable-gpu",
-      "--disable-extensions",
-      "--disable-background-networking",
-      "--disable-default-apps",
-      "--disable-sync",
-      "--disable-translate",
-      "--metrics-recording-only",
-      "--mute-audio",
-      "--no-default-browser-check",
-      "--safebrowsing-disable-auto-update",
-    ],
-  },
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        // Render يحتاج هذه الإعدادات للعمل في بيئة Linux
+        executablePath: '/usr/bin/google-chrome', 
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--disable-gpu'
+        ],
+    }
 });
 
-// ─── System Prompt (Guardrail) ───────────────────────────────────────────────
-const SYSTEM_PROMPT = `أنت مساعد ذكي لمتجر "${STORE_NAME}" الإلكتروني المتخصص في المنتجات التقنية.
+// ==========================================
+// 8. معالجة الأحداث والردود (The Logic)
+// ==========================================
 
-🎯 مهمتك الوحيدة: مساعدة العملاء في:
-- الاستفسار عن المنتجات وأسعارها وتوافرها
-- توجيه العملاء لصفحات المنتجات المناسبة
-- الإجابة على أسئلة الشحن والدفع والضمان الخاصة بالمتجر
-- الترحيب بالعملاء الجدد وتقديم عروض المتجر
+client.on('qr', (qr) => {
+    qrcode.generate(qr, { small: true });
+    console.log("------------------------------------------");
+    console.log("💠 امسح الكود لتشغيل بوت متجر داري:");
+    console.log(`🔗 الرابط: https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(qr)}&size=300x300`);
+    console.log("------------------------------------------");
+});
 
-🚫 ما لا تفعله أبداً:
-- لا تجب على أسئلة خارج نطاق المتجر (سياسة، دين، علوم، ترفيه، إلخ)
-- لا تقدم نصائح طبية أو قانونية أو مالية
-- لا تتحدث عن منافسين أو متاجر أخرى
-- إذا سُئلت عن شيء غير متعلق بالمتجر، أجب بلطف أنك متخصص فقط في خدمة عملاء ${STORE_NAME}
+client.on('ready', () => {
+    console.log(`✅ ${STORE_INFO.NAME} متصل وجاهز للخدمة!`);
+    console.log(`👨‍💻 تم التطوير بواسطة: ${STORE_INFO.OWNER}`);
+});
 
-💜 أسلوبك:
-- ودود، احترافي، حماسي للمنتجات التقنية
-- استخدم الإيموجيات بشكل معتدل (💜 ⚡ 🛒 ✅ 🚀 🎁)
-- الردود موجزة وواضحة باللغة العربية
-- عند توفر بيانات المنتج من البحث، اعرضها بتنسيق جميل مع السعر والرابط
+client.on('message', async msg => {
+    const chat = await msg.getChat();
+    const userMsg = msg.body.toLowerCase().trim();
+    const contact = await msg.getContact();
 
-رابط المتجر: ${STORE_URL}`;
+    // ا) ترحيب البداية والاستقبال ✨
+    if (TRIGGERS.HELLO.some(k => userMsg.includes(k)) || TRIGGERS.START.some(k => userMsg.includes(k))) {
+        return msg.reply(`مرحبا يا هلا واهلا بك! 👋 
+أنا مساعد ${STORE_INFO.NAME} الذكي هنا لخدمتك 💠.
 
-// ─── Web Scraper: Search Products ────────────────────────────────────────────
-async function searchProducts(query) {
-  try {
-    const searchUrl = `${STORE_URL}/search?q=${encodeURIComponent(query)}`;
-    const { data } = await axios.get(searchUrl, {
-      timeout: 8000,
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml",
-        "Accept-Language": "ar,en;q=0.9",
-      },
-    });
+أقدر أساعدك في:
+📦 البحث عن المنتجات وأسعارها.
+🚚 استفسارات الشحن والتوصيل.
+👤 التحويل لموظف بشري متخصص.
 
-    const $ = cheerio.load(data);
-    const products = [];
-
-    // محاولة استخراج المنتجات من هيكل Zid المتجر
-    const selectors = [
-      ".product-card",
-      ".product-item",
-      '[class*="product"]',
-      ".item-card",
-      '[data-product]',
-    ];
-
-    for (const selector of selectors) {
-      if ($(selector).length > 0) {
-        $(selector)
-          .slice(0, 5)
-          .each((_, el) => {
-            const name =
-              $(el).find('[class*="name"], [class*="title"], h3, h4').first().text().trim() ||
-              $(el).attr("data-name");
-            const priceText =
-              $(el).find('[class*="price"], .price, [itemprop="price"]').first().text().trim();
-            const price = priceText.replace(/[^\d,.]/g, "").trim();
-            const link =
-              $(el).find("a").first().attr("href") ||
-              $(el).closest("a").attr("href");
-            const image = $(el).find("img").first().attr("src") || "";
-
-            if (name && name.length > 2) {
-              products.push({
-                name,
-                price: price || "تواصل للسعر",
-                currency: priceText.includes("ر.س") ? "ر.س" : "SAR",
-                link: link
-                  ? link.startsWith("http")
-                    ? link
-                    : `${STORE_URL}${link}`
-                  : searchUrl,
-                image,
-              });
-            }
-          });
-
-        if (products.length > 0) break;
-      }
+وش اللي حاب تستفسر عنه اليوم؟ 💜⚡`);
     }
 
-    // fallback: أخذ الروابط العامة من الصفحة
-    if (products.length === 0) {
-      $("a").each((_, el) => {
-        const href = $(el).attr("href") || "";
-        const text = $(el).text().trim();
-        if (
-          href.includes("/products/") &&
-          text.length > 3 &&
-          products.length < 4
-        ) {
-          products.push({
-            name: text,
-            price: "تواصل للسعر",
-            currency: "",
-            link: href.startsWith("http") ? href : `${STORE_URL}${href}`,
-            image: "",
-          });
+    // ب) التحويل لخدمة العملاء (بشري) 👤
+    if (TRIGGERS.HUMAN.some(k => userMsg.includes(k))) {
+        const { isAvailable, message } = getWorkStatus();
+        let reply = `تواصلنا معنا يسعدنا! 💠 سيتم تحويلك لخدمة العملاء الآن وسيتواصل معك أحد ممثلينا المتخصصين في أقرب وقت ممكن 🚀.
+
+🕒 *أوقات الدعم البشري:*
+🗓️ السبت - الخميس: 9:00 ص - 10:00 م
+🗓️ الجمعة: 2:00 م - 10:00 م`;
+
+        if (!isAvailable) {
+            reply += `\n\n⚠️ *نعتذر جداً عن أي تأخير:* نحن الآن خارج أوقات العمل الرسمية. طلبك مسجل وسنتواصل معك فور عودتنا للعمل. شكراً لصبرك يا غالي! 🙏💜`;
         }
-      });
+        return msg.reply(reply);
     }
 
-    return products;
-  } catch (err) {
-    console.error("⚠️  Scraping error:", err.message);
-    return [];
-  }
-}
-
-// ─── Format Products for Message ─────────────────────────────────────────────
-function formatProducts(products) {
-  if (!products || products.length === 0) return null;
-
-  let msg = `🛒 *نتائج البحث في ${STORE_NAME}:*\n\n`;
-  products.forEach((p, i) => {
-    msg += `*${i + 1}. ${p.name}*\n`;
-    if (p.price && p.price !== "تواصل للسعر") {
-      msg += `💰 السعر: ${p.price} ${p.currency}\n`;
-    } else {
-      msg += `💰 السعر: تواصل للاستفسار\n`;
-    }
-    msg += `🔗 ${p.link}\n\n`;
-  });
-  msg += `━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `📦 تصفح كامل المتجر: ${STORE_URL}`;
-  return msg;
-}
-
-// ─── OpenAI Reply Generator ───────────────────────────────────────────────────
-async function generateReply(userId, userMessage, productsContext = null) {
-  // تهيئة تاريخ المحادثة
-  if (!conversations.has(userId)) {
-    conversations.set(userId, []);
-  }
-  const history = conversations.get(userId);
-
-  // إضافة سياق المنتجات إذا توفر
-  let contextMessage = userMessage;
-  if (productsContext && productsContext.length > 0) {
-    const productsSummary = productsContext
-      .map(
-        (p, i) =>
-          `${i + 1}. اسم المنتج: ${p.name} | السعر: ${p.price} ${p.currency} | الرابط: ${p.link}`
-      )
-      .join("\n");
-    contextMessage = `سؤال العميل: ${userMessage}\n\nنتائج البحث في المتجر:\n${productsSummary}\n\nقدم هذه المنتجات للعميل بشكل جذاب مع أسعارها وروابطها.`;
-  }
-
-  // إضافة رسالة المستخدم للتاريخ
-  history.push({ role: "user", content: contextMessage });
-
-  // الحفاظ على حد أقصى للتاريخ
-  if (history.length > MAX_HISTORY * 2) {
-    history.splice(0, 2);
-  }
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
-    max_tokens: 500,
-    temperature: 0.7,
-  });
-
-  const reply = response.choices[0].message.content;
-
-  // إضافة رد البوت للتاريخ
-  history.push({ role: "assistant", content: reply });
-  conversations.set(userId, history);
-
-  return reply;
-}
-
-// ─── Detect Human Handoff Request ────────────────────────────────────────────
-function isHumanHandoffRequest(message) {
-  const triggers = [
-    "خدمة العملاء",
-    "موظف",
-    "انسان",
-    "إنسان",
-    "بشر",
-    "تحدث مع",
-    "اتصل",
-    "مشرف",
-    "مدير",
-    "شكوى",
-    "مشكلة",
-    "human",
-    "agent",
-    "support",
-    "كلم احد",
-    "كلم أحد",
-  ];
-  return triggers.some((t) => message.toLowerCase().includes(t.toLowerCase()));
-}
-
-// ─── Detect Product Search Intent ────────────────────────────────────────────
-function isProductQuery(message) {
-  const triggers = [
-    "سعر",
-    "منتج",
-    "أبحث",
-    "ابحث",
-    "عندكم",
-    "عندك",
-    "متوفر",
-    "توفر",
-    "كيف",
-    "ألعاب",
-    "جهاز",
-    "كمبيوتر",
-    "لابتوب",
-    "هاتف",
-    "اكسسوار",
-    "ذاكرة",
-    "شاشة",
-    "كيبورد",
-    "ماوس",
-    "سماعة",
-    "شراء",
-    "اشتري",
-    "طلب",
-    "كارت",
-    "gpu",
-    "cpu",
-    "ram",
-    "ssd",
-    "روتر",
-    "شبكة",
-  ];
-  return triggers.some((t) => message.toLowerCase().includes(t.toLowerCase()));
-}
-
-// ─── Welcome Message ──────────────────────────────────────────────────────────
-function getWelcomeMessage(name) {
-  return `مرحباً ${name ? "يا *" + name + "*" : ""} وأهلاً بك! 💜⚡
-
-أنا *مساعد ${STORE_NAME}* الذكي، هنا لخدمتك!
-
-يمكنني مساعدتك في:
-🛒 الاستفسار عن *المنتجات والأسعار*
-📦 معرفة *حالة الطلبات والشحن*
-🎁 الاطلاع على *العروض والخصومات*
-💳 *طرق الدفع* والضمان
-
-فقط اكتب ما تبحث عنه وسأساعدك فوراً! 🚀
-━━━━━━━━━━━━━━━━━━━
-🌐 متجرنا: ${STORE_URL}`;
-}
-
-// ─── Human Handoff Message ────────────────────────────────────────────────────
-function getHandoffMessage() {
-  return `شكراً لتواصلك معنا 💜
-
-⏳ *يتم تحويلك لفريق خدمة العملاء الآن...*
-
-سيتواصل معك أحد ممثلينا المتخصصين في أقرب وقت ممكن.
-
-⚡ أوقات الدعم البشري:
-🕘 السبت – الخميس: 9 ص – 10 م
-🕙 الجمعة: 2 م – 10 م
-
-في حال كان استفساركم عاجلاً، يمكنكم مراسلتنا على:
-📧 support@smart19.zid.store
-
-نعتذر عن أي تأخير وشكراً على صبركم! 🙏`;
-}
-
-// ─── Main Message Handler ─────────────────────────────────────────────────────
-client.on("message", async (msg) => {
-  // تجاهل الرسائل الجماعية والحالات والرسائل من البوت نفسه
-  if (msg.isGroupMsg || msg.fromMe || msg.type === "status") return;
-
-  const userId = msg.from;
-  const userMessage = msg.body?.trim();
-  if (!userMessage || userMessage.length === 0) return;
-
-  console.log(`📩 [${new Date().toLocaleTimeString("ar-SA")}] رسالة من ${userId}: ${userMessage}`);
-
-  try {
-    // ─── 1. تحويل لفريق البشر ────────────────────────────────
-    if (isHumanHandoffRequest(userMessage)) {
-      humanHandoff.add(userId);
-      await msg.reply(getHandoffMessage());
-      console.log(`🔀 تم تحويل ${userId} لخدمة العملاء`);
-      return;
+    // ج) البحث عن منتجات المتجر (تلقائي) 🛒
+    if (userMsg.length > 2 && (TRIGGERS.PRICING.some(k => userMsg.includes(k)) || userMsg.includes('عندكم'))) {
+        const items = await searchProducts(userMsg);
+        if (items.length > 0) {
+            let res = `بحثت لك ووجدت هذي المنتجات في متجرنا 💠🛒:\n\n`;
+            items.forEach(p => {
+                res += `🔹 *${p.name}*\n💰 السعر: ${p.price}\n🔗 اطلبه من هنا: ${p.link}\n\n`;
+            });
+            res += `تبي مساعدة في منتج ثاني؟ 💜⚡`;
+            return msg.reply(res);
+        }
     }
 
-    // ─── 2. إعادة تفعيل البوت بعد التحويل ──────────────────
-    if (humanHandoff.has(userId)) {
-      const resumeTriggers = ["بوت", "مساعد", "ابدأ", "start", "مرحبا", "هلا"];
-      if (resumeTriggers.some((t) => userMessage.toLowerCase().includes(t))) {
-        humanHandoff.delete(userId);
-        conversations.delete(userId);
-        await msg.reply(getWelcomeMessage(""));
-        return;
-      }
-      // لا نرد إذا كان المستخدم في وضع التحويل البشري
-      return;
+    // د) سياسات الشحن والدفع 🚚
+    if (userMsg.includes('شحن') || userMsg.includes('توصيل')) return msg.reply(STORE_POLICIES.SHIPPING);
+    if (userMsg.includes('دفع') || userMsg.includes('ابل باي')) return msg.reply(STORE_POLICIES.PAYMENT);
+    if (userMsg.includes('كيف اطلب') || userMsg.includes('طريقة')) return msg.reply(STORE_POLICIES.HOW_TO_ORDER);
+
+    // هـ) الذكاء الاصطناعي (OpenAI) - المحرك الذكي المحمي 🧠
+    try {
+        const systemPrompt = `
+        اسمك: مساعد ${STORE_INFO.NAME} الذكي.
+        مهمتك الوحيدة: مساعدة عملاء المتجر في استفسارات المنتجات، الشحن، والضمان.
+        
+        القيود الصارمة:
+        - لا تتحدث في السياسة، الدين، الرياضة، أو أي موضوع خارج المتجر.
+        - إذا سئلت عن شيء غير متعلق بالمتجر، اعتذر بلباقة وقل إنك مخصص فقط لخدمة ${STORE_INFO.NAME} 💠.
+        - لا تقدم نصائح طبية أو قانونية.
+        - استخدم إيموجيات: ⚡, 💠, 🚀, 💜, 🛒 بشكل متوازن.
+        - كن لطيفاً جداً وفخوراً بأنك "Made by Dari".
+        - رابط المتجر: ${STORE_INFO.URL}.
+        `;
+
+        const completion = await openai.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: msg.body }],
+            temperature: 0.7
+        });
+
+        return msg.reply(completion.choices[0].message.content + "\n\n💠 CodeCraft Systems");
+    } catch (e) {
+        console.error("AI Error");
+        if (userMsg.includes('رابط') || userMsg.includes('موقع')) {
+            return msg.reply(`تفضل يا غالي رابط متجرنا الرسمي: ${STORE_INFO.URL} 💠💜`);
+        }
     }
-
-    // ─── 3. رسالة الترحيب للمستخدمين الجدد ──────────────────
-    const history = conversations.get(userId);
-    if (!history || history.length === 0) {
-      const contact = await msg.getContact();
-      const name = contact.pushname || contact.name || "";
-      await msg.reply(getWelcomeMessage(name));
-      // تهيئة التاريخ
-      conversations.set(userId, []);
-      // نستمر ليرد البوت على الرسالة الأولى أيضاً إذا كانت سؤالاً
-      if (userMessage.length < 4) return;
-    }
-
-    // ─── 4. البحث في المتجر إذا بدا السؤال عن منتج ─────────
-    let products = [];
-    if (isProductQuery(userMessage)) {
-      console.log(`🔍 جاري البحث في المتجر: "${userMessage}"`);
-      products = await searchProducts(userMessage);
-      console.log(`📦 تم إيجاد ${products.length} منتج`);
-    }
-
-    // ─── 5. توليد الرد بالذكاء الاصطناعي ───────────────────
-    const aiReply = await generateReply(userId, userMessage, products);
-    await msg.reply(aiReply);
-
-    // ─── 6. إرسال قائمة المنتجات منفصلة إذا وُجدت ──────────
-    if (products.length > 0) {
-      const productsMsg = formatProducts(products);
-      if (productsMsg) {
-        await new Promise((r) => setTimeout(r, 800)); // تأخير بسيط
-        await msg.reply(productsMsg);
-      }
-    }
-
-    console.log(`✅ تم الرد على ${userId}`);
-  } catch (error) {
-    console.error(`❌ خطأ في معالجة رسالة ${userId}:`, error.message);
-
-    // رسالة خطأ للمستخدم
-    await msg
-      .reply(
-        `عذراً 😔 حدث خطأ مؤقت. يُرجى إعادة المحاولة.\n\nأو تصفح متجرنا مباشرة: ${STORE_URL} 💜`
-      )
-      .catch(() => {});
-  }
 });
 
-// ─── Client Events ────────────────────────────────────────────────────────────
-client.on("qr", async (qr) => {
-  currentQR = qr;
-  botStatus = "awaiting_qr";
+// ==========================================
+// 9. تشغيل السيرفر (Keep Alive) 🚀
+// ==========================================
+http.createServer((req, res) => {
+    res.writeHead(200);
+    res.end('Bot is Active & Optimized for Render! 🚀');
+}).listen(process.env.PORT || 8080);
 
-  // طباعة في اللوق كما كان
-  console.log("\n📲 امسح الـ QR Code التالي بتطبيق واتساب:\n");
-  qrcode.generate(qr, { small: true });
-  console.log(`\n🌐 أو افتح في المتصفح: http://localhost:${PORT}/qr\n`);
-  console.log("⚠️  QR Code صالح لمدة 60 ثانية فقط!\n");
-
-  // توليد صورة base64 للعرض في المتصفح
-  try {
-    currentQRImage = await QRCode.toDataURL(qr, {
-      width: 300,
-      margin: 2,
-      color: { dark: "#000000", light: "#ffffff" },
-    });
-  } catch (e) {
-    console.error("خطأ في توليد صورة QR:", e.message);
-  }
-});
-
-client.on("ready", () => {
-  currentQR = null;
-  currentQRImage = null;
-  botStatus = "ready";
-  console.log("\n╔════════════════════════════════════════╗");
-  console.log("║  ✅  CodeCraft WhatsApp Bot — READY!   ║");
-  console.log(`║  🌐  Store: ${STORE_URL.padEnd(26)}║`);
-  console.log("║  💜  Powered by OpenAI + whatsapp-web  ║");
-  console.log("╚════════════════════════════════════════╝\n");
-});
-
-client.on("auth_failure", (msg) => {
-  console.error("🔐 فشل المصادقة:", msg);
-  console.log("🔄 يرجى حذف مجلد .wwebjs_auth وإعادة المسح");
-});
-
-client.on("disconnected", (reason) => {
-  botStatus = "disconnected";
-  console.warn("⚠️  تم قطع الاتصال:", reason);
-  console.log("🔄 جاري إعادة الاتصال...");
-  setTimeout(() => client.initialize(), 5000);
-});
-
-// ─── Keep-Alive HTTP Server (Render.com) ─────────────────────────────────────
-const PORT = process.env.PORT || 3000;
-
-const QR_PAGE = (imgSrc) => `<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>CodeCraft Bot — ربط واتساب</title>
-  <meta http-equiv="refresh" content="20"/>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:system-ui,sans-serif;background:#0f0f1a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:2rem}
-    .card{background:#1a1a2e;border:1px solid #2d2d4e;border-radius:16px;padding:2.5rem 2rem;text-align:center;max-width:380px;width:100%}
-    h1{font-size:1.4rem;color:#a78bfa;margin-bottom:.4rem}
-    .sub{font-size:.85rem;color:#64748b;margin-bottom:1.8rem}
-    .qr-wrap{background:#fff;border-radius:12px;padding:16px;display:inline-block;margin-bottom:1.5rem}
-    .qr-wrap img{display:block;width:260px;height:260px}
-    .badge{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:99px;font-size:.8rem;font-weight:500}
-    .badge.waiting{background:#1e293b;color:#f59e0b;border:1px solid #f59e0b44}
-    .badge.ready{background:#1e293b;color:#22c55e;border:1px solid #22c55e44}
-    .steps{text-align:right;margin-top:1.5rem;border-top:1px solid #2d2d4e;padding-top:1.2rem}
-    .step{display:flex;gap:10px;align-items:flex-start;margin-bottom:.75rem;font-size:.85rem;color:#94a3b8}
-    .num{background:#2d2d4e;color:#a78bfa;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;margin-top:1px}
-    .timer{font-size:.75rem;color:#64748b;margin-top:.8rem}
-    .ready-msg{padding:2rem 1rem}
-    .ready-icon{font-size:3rem;margin-bottom:1rem}
-    .ready-title{color:#22c55e;font-size:1.1rem;font-weight:600;margin-bottom:.4rem}
-    .ready-sub{color:#64748b;font-size:.85rem}
-  </style>
-</head>
-<body>
-<div class="card">
-  <h1>💜 CodeCraft Systems</h1>
-  <p class="sub">WhatsApp AI Bot</p>
-
-  ${imgSrc ? `
-  <div class="qr-wrap">
-    <img src="${imgSrc}" alt="QR Code واتساب"/>
-  </div>
-  <div>
-    <span class="badge waiting">⏳ في انتظار المسح</span>
-  </div>
-  <div class="steps">
-    <div class="step"><span class="num">١</span><span>افتح واتساب على هاتفك</span></div>
-    <div class="step"><span class="num">٢</span><span>اضغط ⋮ ← <b>الأجهزة المرتبطة</b> ← <b>ربط جهاز</b></span></div>
-    <div class="step"><span class="num">٣</span><span>وجّه الكاميرا نحو الـ QR أعلاه</span></div>
-  </div>
-  <p class="timer">🔄 الصفحة تتجدد تلقائياً كل 20 ثانية</p>
-  ` : `
-  <div class="ready-msg">
-    <div class="ready-icon">✅</div>
-    <div class="ready-title">البوت متصل ويعمل!</div>
-    <div class="ready-sub">لا حاجة لمسح أي QR<br/>الجلسة محفوظة تلقائياً</div>
-  </div>
-  <div><span class="badge ready">● نشط</span></div>
-  `}
-</div>
-</body>
-</html>`;
-
-const server = http.createServer((req, res) => {
-  const url = req.url.split("?")[0];
-
-  // ─── /qr  صفحة الربط ──────────────────────────────────
-  if (url === "/qr" || url === "/") {
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(QR_PAGE(currentQRImage));
-
-  // ─── /qr.png  صورة QR مباشرة ──────────────────────────
-  } else if (url === "/qr.png") {
-    if (!currentQRImage) {
-      res.writeHead(404); res.end("QR not ready");
-    } else {
-      const buf = Buffer.from(currentQRImage.split(",")[1], "base64");
-      res.writeHead(200, { "Content-Type": "image/png" });
-      res.end(buf);
-    }
-
-  // ─── /health  فحص الحالة ──────────────────────────────
-  } else if (url === "/health") {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      status: "ok",
-      botStatus,
-      qrReady: !!currentQRImage,
-      uptime: Math.round(process.uptime()),
-      activeConversations: conversations.size,
-      timestamp: new Date().toISOString(),
-    }));
-
-  } else {
-    res.writeHead(302, { Location: "/qr" });
-    res.end();
-  }
-});
-
-server.listen(PORT, () => {
-  console.log(`🌐 HTTP Server يعمل على المنفذ ${PORT}`);
-  console.log(`📲 صفحة ربط واتساب: http://localhost:${PORT}/qr`);
-  console.log(`🔗 فحص الحالة:       http://localhost:${PORT}/health\n`);
-});
-
-// ─── Graceful Shutdown ────────────────────────────────────────────────────────
-process.on("SIGTERM", async () => {
-  console.log("\n🛑 إيقاف البوت...");
-  await client.destroy();
-  server.close();
-  process.exit(0);
-});
-
-process.on("SIGINT", async () => {
-  console.log("\n🛑 إيقاف البوت (Ctrl+C)...");
-  await client.destroy();
-  server.close();
-  process.exit(0);
-});
-
-// ─── Initialize Bot ───────────────────────────────────────────────────────────
-console.log("🚀 جاري تشغيل CodeCraft WhatsApp Bot...");
 client.initialize();
