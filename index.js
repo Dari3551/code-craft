@@ -25,7 +25,7 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_KEY });
 // ─── Store Config ────────────────────────────────────────────────────────────
 const STORE_URL = "https://smart19.zid.store";
 const STORE_NAME = "CodeCraft Systems";
-const SUPPORT_NUMBER = process.env.SUPPORT_NUMBER || "966500000000"; // غيّره لرقم الدعم الحقيقي
+const SUPPORT_NUMBER = process.env.SUPPORT_NUMBER || "966579804565"; // غيّره لرقم الدعم الحقيقي
 
 // ─── In-Memory Conversation History (per user) ───────────────────────────────
 const conversations = new Map(); // userId → [{ role, content }]
