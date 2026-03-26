@@ -1,0 +1,13 @@
+{
+  "name": "zid-callback-bot",
+  "version": "1.0.0",
+  "description": "Zid OAuth Callback Server",
+  "main": "callback.js",
+  "scripts": {
+    "start": "node callback.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "express": "^4.18.2"
+  }
+}
