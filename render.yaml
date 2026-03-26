@@ -1,0 +1,79 @@
+# ═══════════════════════════════════════════════════════════
+#   render.yaml — CodeCraft Systems WhatsApp Bot
+#   منصة الاستضافة: https://render.com
+# ═══════════════════════════════════════════════════════════
+
+services:
+  - type: web
+    name: codecraft-whatsapp-bot
+    runtime: node
+    region: frankfurt  # أقرب منطقة للشرق الأوسط
+
+    # ─── Build Settings ───
+    buildCommand: |
+      npm install &&
+      apt-get update -y &&
+      apt-get install -y \
+        google-chrome-stable \
+        fonts-liberation \
+        fonts-noto-color-emoji \
+        libatk-bridge2.0-0 \
+        libatk1.0-0 \
+        libcups2 \
+        libdrm2 \
+        libgbm1 \
+        libnss3 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        xdg-utils \
+        --no-install-recommends
+
+    startCommand: node index.js
+
+    # ─── Health Check ───
+    healthCheckPath: /health
+
+    # ─── Auto Deploy ───
+    autoDeploy: true
+
+    # ─── Plan (Free tier — يكفي للبداية) ───
+    plan: starter
+
+    # ─── Environment Variables ───
+    # ⚠️ أضف القيم الحقيقية في لوحة Render — لا تضعها هنا
+    envVars:
+      - key: OPENAI_KEY
+        sync: false  # يُدخله المستخدم يدوياً
+
+      - key: SUPPORT_NUMBER
+        sync: false
+
+      - key: PORT
+        value: "3000"
+
+      - key: PUPPETEER_EXECUTABLE_PATH
+        value: /usr/bin/google-chrome-stable
+
+      - key: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD
+        value: "true"
+
+      - key: NODE_ENV
+        value: production
+
+    # ─── Persistent Disk (لحفظ جلسة واتساب) ───
+    disk:
+      name: whatsapp-session
+      mountPath: /opt/render/project/src/session_data
+      sizeGB: 1
+
+# ═══════════════════════════════════════════════════════════
+# 📝 تعليمات النشر على Render:
+#
+# 1. ارفع الكود على GitHub (بدون .env)
+# 2. افتح render.com وأنشئ "New Web Service"
+# 3. اربط مع الـ GitHub repo
+# 4. Render سيقرأ هذا الملف تلقائياً
+# 5. أضف OPENAI_KEY في Environment Variables
+# 6. انتظر Build ثم افتح Logs لمسح QR Code
+# ═══════════════════════════════════════════════════════════
