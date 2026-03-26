@@ -3,8 +3,8 @@ const express = require('express');
 const app = express();
 
 const config = {
-    client_id: 'ID_من_سلة',
-    client_secret: 'Secret_من_سلة',
+    client_id: 'b504fac3-e249-4aef-a5ac-febaacd97e13',
+    client_secret: '320232e7adb8f74f35204a5f73d3a00958e26d4688972070e3cd474d04ee0a9a',
     redirect_uri: 'https://code-craft-dhhr.onrender.com/callback'
 };
 
